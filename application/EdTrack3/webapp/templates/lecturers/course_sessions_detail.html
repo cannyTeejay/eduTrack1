@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -219,10 +219,14 @@
                             Vanue: {{ session.location }}
                         </p>
                     </div>
-                    <div class="mt-6 flex flex-col sm:flex-row gap-3">
+                    <div class="mt-6 flex flex-col sm:flex-row gap-1">
                         {# Link to edit this specific session #}
-                        <a href="{% url 'edit_class_session' session.id %}" class="inline-flex items-center justify-center px-4 py-2 bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 flex-grow">
+                        <a href="{% url 'edit_class_session' session.id %}" class="flex-1 inline-flex items-center justify-center px-4 py-2 bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
                             <i data-lucide="edit" class="w-4 h-4 mr-2"></i> Edit Session
+                        </a>
+                        {# Link to delete this specific session #}
+                        <a href="{% url 'delete_class_session' session.id %}" class="flex-1 inline-flex items-center justify-center px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50">
+                            <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i> Delete Session
                         </a>
                     </div>
                 </div>

@@ -257,7 +257,8 @@
 <body>
     <header class="header">
         <div class="container header-container">
-            <img src="your-logo.png" alt="EduTrack Logo" class="logo">
+            {% load static %}
+            <img src="{% static 'your-logo.png' %}" alt="EduTrack Logo" class="logo">
             <h1 class="text-3xl font-semibold text-gray-800">
                 Attendance Management with EduTrack
             </h1>

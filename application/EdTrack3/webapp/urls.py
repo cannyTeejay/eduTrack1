@@ -1,4 +1,3 @@
-
 from django.urls import path
 from . import views
 from django.contrib.auth import views as auth_views
@@ -23,11 +22,13 @@ urlpatterns = [
     # --- Session urls---
     path('lecturer/schedule/add/', views.add_class_session, name='add_class_session'),
     path('lecturer/schedule/edit/<int:pk>/', views.edit_class_session, name='edit_class_session'),
+    path('class-session/<int:pk>/edit/', views.edit_class_session, name='edit_class_session'),
+    path('class-session/<int:pk>/delete/', views.delete_class_session, name='delete_class_session'),
 
-     path('lecturer/course/<str:course_code>/', views.view_course_sessions, name='view_course_sessions'),
+    path('lecturer/course/<str:course_code>/', views.view_course_sessions, name='view_course_sessions'),
 
     # --- announcements urls---
-   path('announcements/send/', views.send_announcement, name='send_announcement'),
+    path('announcements/send/', views.send_announcement, name='send_announcement'),
     # --- API Endpoints ---
     path('api/update-student-profile/', views.update_student_profile_api, name='update_student_profile_api'),
     path('api/mark-attendance/', views.mark_attendance_api, name='mark_attendance_api'),

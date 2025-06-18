@@ -146,7 +146,7 @@
             padding: 2.5rem; /* Even more generous padding */
             transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             min-height: 100vh;
-            background-image: url("{% static 'css/students-classroom.jpg' %}");  
+            background-image: url("{% static 'css/students-classroom.jpg' %}");
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
@@ -938,6 +938,11 @@
         </div>
     </div>
 
+    <!-- Place in students/student_dashboard.html -->
+<input type="hidden" id="hasMarkedAttendance" value="{{ has_marked_attendance|yesno:'true,false' }}">
+<input type="hidden" id="currentSessionId" value="{{ current_session_id }}">
+
+
     {# Django json_script tags for data #}
     {{ subjects|json_script:"subjects_data" }}
     {{ attendance_records|json_script:"attendance_records_data" }}
@@ -1208,12 +1213,14 @@
             }
 
             stopCamera() {
-                if (this.cameraFeed.srcObject) {
-                    this.cameraFeed.srcObject.getTracks().forEach(track => track.stop());
+                if(this.cameraFeed && this.cameraFeed.srcObject) {
+                    const tracks = this.cameraFeed.srcObject.getTracks();
+                    tracks.forEach(track => track.stop());
                     this.cameraFeed.srcObject = null;
                 }
-                if (this.stream) {
-                    this.stream.getTracks().forEach(track => track.stop());
+                if(this.stream) {
+                    const tracks = this.stream.getTracks();
+                    tracks.forEach(track => track.stop());
                     this.stream = null;
                 }
             }
@@ -1279,10 +1286,22 @@
                 } finally {
                     this.captureAttendanceButton.disabled = false; // Re-enable button
                     this.stopCamera(); // Stop camera regardless of success/failure
+
+                    //const cameraModalInstance = 
+
+                    document.querySelector('.modal-backdrop').forEach(el => el.remove());
+                    document.body.classList.remove('modal-open');
+                    document.body.style.overflow = '';
+                    document.body.style.paddingRight = '';
                 }
             }
 
             checkAndAutoOpenAttendanceModal() {
+                const hasMarkedAttendance = document.getElementById('hasMarkedAttendance').value === 'true';
+                if( hasMarkedAttendance) {
+                    // If attendance has already been marked, do not auto-open the modal
+                    return;
+                }
                 const now = new Date();
                 const currentDayIndex = now.getDay(); // 0 for Sunday, 1 for Monday, etc.
                 const dayOrder = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

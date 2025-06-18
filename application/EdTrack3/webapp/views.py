@@ -201,6 +201,25 @@ def student_dashboard(request):
                 'lecturer_email': lecturer.user.email,
             })
 
+    # --- Find current session for auto-attendance ---
+    now = timezone.localtime(timezone.now())
+    today_name = now.strftime('%A')
+    current_time = now.time()
+    current_session_id = None
+    has_marked_attendance = False
+
+    for session in class_schedule_qs:
+        if session.get_day_of_week_display() == today_name:
+            start = session.start_time
+            end = (datetime.combine(now.date(), session.start_time) + timedelta(minutes=10)).time()
+            if start <= current_time <= end:
+                current_session_id = session.id
+                # Check if attendance exists for this session
+                has_marked_attendance = Attendance.objects.filter(
+                    student=student_profile, session=session
+                ).exists()
+                break
+
     context = {
         'student': {
             'firstName': user_data.first_name,
@@ -214,6 +233,8 @@ def student_dashboard(request):
         'attendance_records': attendance_records_data,
         'class_schedule': class_schedule_data,
         'lecturer_info': lecturer_info,
+        'has_marked_attendance': has_marked_attendance,
+        'current_session_id': current_session_id,
     }
 
      
@@ -714,7 +735,7 @@ def mark_attendance_api(request):
                 'image_data_url': attendance_record.image_data.url if attendance_record.image_data else None,
                 'session_id': attendance_record.session.id,
                 'session_day': attendance_record.session.get_day_of_week_display(),
-                'session_start_time': attendance_record.session.strftime('%H:%M'),
+                'session_start_time': attendance_record.session.start_time.strftime('%H:%M'),
             }
 
             return JsonResponse({
@@ -732,7 +753,6 @@ def mark_attendance_api(request):
             traceback.print_exc()
             return JsonResponse({'error': f'An error occurred: {str(e)}'}, status=500)
     return JsonResponse({'error': 'Invalid request method.'}, status=405)
-
 
  
 @login_required
@@ -800,7 +820,7 @@ def edit_class_session(request, pk):
         form = ClassSessionForm(instance=class_session, lecturer_profile=lecturer_profile)
 
     # 
-    return render(request, 'academics/class_session_form.html', {'form': form, 'class_session': class_session})
+    return render(request, 'lecturers/class_session_form.html', {'form': form, 'class_session': class_session})
 
 @login_required
 @user_passes_test(is_student)
@@ -879,3 +899,24 @@ def custom_404_view(request,exception):
 
 def custom_403_view(request,exception):
     return render(request, '403.html', status=403)
+
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import get_object_or_404, redirect, render
+from django.contrib import messages
+
+@login_required
+def delete_class_session(request, pk):
+    # Ensure the logged-in user is a lecturer
+    if not hasattr(request.user, 'lecturer_profile'):
+        messages.error(request, "You must be a lecturer to delete class schedules.")
+        return redirect('lecturer_dashboard')
+
+    lecturer_profile = request.user.lecturer_profile
+    class_session = get_object_or_404(ClassSession, pk=pk, lecturer=lecturer_profile)
+
+    if request.method == 'POST':
+        class_session.delete()
+        messages.success(request, "Class session deleted successfully!")
+        return redirect('lecturer_dashboard')
+
+    return render(request, 'lecturers/class_session_confirm_delete.html', {'class_session': class_session})

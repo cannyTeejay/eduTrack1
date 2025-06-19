@@ -2,8 +2,9 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.contrib import messages # For displaying feedback messages
-
- 
+from .confirm_identity import checkIdentity
+import tempfile
+import os
  
 from django.db.models import Prefetch, Count, Q
 from django.http import JsonResponse
@@ -14,6 +15,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
 from datetime import timedelta
 from datetime import datetime, time
+from django.core.mail import send_mail
 from django.utils import timezone
 from .models import User, Student, Lecturer, Course, Enrollment, ClassSession, Attendance
 from .forms import (
@@ -219,6 +221,43 @@ def student_dashboard(request):
                     student=student_profile, session=session
                 ).exists()
                 break
+
+    # Mark absences for all past sessions this week where the student has no attendance record
+    now = timezone.localtime(timezone.now())
+    today = now.date()
+    current_weekday = today.weekday()  # Monday=0, Sunday=6
+
+    day_name_to_index = {
+        'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3,
+        'Friday': 4, 'Saturday': 5, 'Sunday': 6
+    }
+    for session in class_schedule_qs:
+        session_weekday = day_name_to_index[session.day_of_week]
+    # Only consider sessions earlier in the week (including today if already ended)
+        if session_weekday < current_weekday or (session_weekday == current_weekday and session.end_time < now.time()):
+            # Calculate the date of this week's occurrence of the session
+            session_date = today - timedelta(days=(current_weekday - session_weekday))
+            # Check if attendance exists for this session occurrence
+            if not Attendance.objects.filter(
+                student=student_profile,
+                session=session,
+                date_time__date=session_date
+            ).exists():
+                Attendance.objects.create(
+                    student=student_profile,
+                    session=session,
+                    status='Absent',
+                    date_time=datetime.combine(session_date, session.end_time)
+                )
+                # Send email to parent if email exists
+                if student_profile.parent_email:
+                    send_mail(
+                        subject='Absence Notification',
+                        message=f'Dear Parent,\n\nYour child {student_profile.user.get_full_name()} was absent for {session.course.course_name} on {session_date}.',
+                        from_email=None,  # Uses DEFAULT_FROM_EMAIL from settings
+                        recipient_list=[student_profile.parent_email],
+                        fail_silently=False,
+                    )
 
     context = {
         'student': {
@@ -738,13 +777,30 @@ def mark_attendance_api(request):
                 'session_start_time': attendance_record.session.start_time.strftime('%H:%M'),
             }
 
-            return JsonResponse({
-                'message': 'Attendance marked successfully!',
-                'status': attendance_record.status,
-                'course_name': session.course.course_name,
-                'new_record': new_record_data,
-                'created': created
-            })
+            # Save the uploaded image temporarily
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}') as tmp:
+                tmp.write(image_data)
+                tmp_path = tmp.name
+
+            try:
+                # Check if the face matches the logged-in student
+                if checkIdentity(tmp_path, student.user.username):
+                    attendance_record.status = 'Present'
+                    attendance_record.save()
+                    os.remove(tmp_path)  # Remove the temp file after processing
+                    return JsonResponse({
+                        'message': 'Attendance marked successfully!',
+                        'status': attendance_record.status,
+                        'course_name': session.course.course_name,
+                        'new_record': new_record_data,
+                        'created': created
+                    })
+                else:
+                    os.remove(tmp_path)  # Remove the temp file
+                    return JsonResponse({'error': 'Face verification failed.'}, status=403)
+            except Exception as e:
+                os.remove(tmp_path)  # Ensure the temp file is removed on error
+                return JsonResponse({'error': f'An error occurred during face verification: {str(e)}'}, status=500)
 
         except ClassSession.DoesNotExist:
             return JsonResponse({'error': 'Class session not found.'}, status=404)
@@ -920,3 +976,4 @@ def delete_class_session(request, pk):
         return redirect('lecturer_dashboard')
 
     return render(request, 'lecturers/class_session_confirm_delete.html', {'class_session': class_session})
+

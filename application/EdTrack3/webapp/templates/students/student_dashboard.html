@@ -1275,8 +1275,7 @@
                         }
                         this.renderAttendanceRecords(); // Re-render attendance section if active
                         this.renderAttendanceSummary(); // Re-render dashboard summary
-                        const cameraModalInstance = bootstrap.Modal.getInstance(this.cameraAttendanceModalElement);
-                        if (cameraModalInstance) cameraModalInstance.hide();
+                        
                     } else {
                         showAlert("Attendance Failed", data.error || "An error occurred while marking attendance.", "danger");
                     }
@@ -1287,63 +1286,62 @@
                     this.captureAttendanceButton.disabled = false; // Re-enable button
                     this.stopCamera(); // Stop camera regardless of success/failure
 
-                    //const cameraModalInstance = 
+                    const cameraModalInstance = bootstrap.Modal.getInstance(this.cameraAttendanceModalElement);
+                    if (cameraModalInstance) cameraModalInstance.hide();
 
                     document.querySelector('.modal-backdrop').forEach(el => el.remove());
-                    document.body.classList.remove('modal-open');
-                    document.body.style.overflow = '';
-                    document.body.style.paddingRight = '';
+                    setTimeout(() => {
+                        document.body.classList.remove('modal-open');
+                        document.body.style.overflow = '';
+                        document.body.style.paddingRight = '';
+                    }, 50); // Allow time for modal to close
                 }
             }
 
             checkAndAutoOpenAttendanceModal() {
                 const hasMarkedAttendance = document.getElementById('hasMarkedAttendance').value === 'true';
-                if( hasMarkedAttendance) {
-                    // If attendance has already been marked, do not auto-open the modal
-                    return;
-                }
+                if (hasMarkedAttendance) return;
+
                 const now = new Date();
-                const currentDayIndex = now.getDay(); // 0 for Sunday, 1 for Monday, etc.
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const currentDayIndex = now.getDay(); // 0=Sunday, 1=Monday, etc.
                 const dayOrder = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
                 let activeSessionFound = false;
 
                 for (const session of allClassSchedule) {
                     const sessionDayIndex = dayOrder.indexOf(session.day_of_week);
+                    // Calculate the date for this week's occurrence of the session
+                    const diff = sessionDayIndex - currentDayIndex;
+                    const sessionDate = new Date(today);
+                    sessionDate.setDate(today.getDate() + diff);
 
-                    // Only check if it's the current day of the week
-                    if (sessionDayIndex === currentDayIndex) {
-                        const sessionStart = new Date();
-                        const sessionEnd = new Date();
+                    // Set session start and end datetime
+                    const [startHours, startMinutes] = session.start_time.split(':').map(Number);
+                    const [endHours, endMinutes] = session.end_time.split(':').map(Number);
 
-                        const [startHours, startMinutes] = session.start_time.split(':').map(Number);
-                        const [endHours, endMinutes] = session.end_time.split(':').map(Number);
+                    const sessionStart = new Date(sessionDate);
+                    sessionStart.setHours(startHours, startMinutes, 0, 0);
+                    const sessionEnd = new Date(sessionDate);
+                    sessionEnd.setHours(endHours, endMinutes, 0, 0);
 
-                        sessionStart.setHours(startHours, startMinutes, 0, 0);
-                        sessionEnd.setHours(endHours, endMinutes, 0, 0);
+                    if (now >= sessionStart && now <= sessionEnd) {
+                        this.currentClassNameDisplay.textContent = `${session.course_name} (${session.day_of_week} ${session.start_time})`;
+                        this.captureAttendanceButton.dataset.sessionId = session.id;
 
-                        // Give a grace period of 10 minutes *after* the class starts for automatic popup
-                        const gracePeriodEnd = new Date(sessionStart.getTime() + (10 * 60 * 1000)); // 10 minutes after start
-
-                        // Check if current time is within the session start and grace period
-                        if (now >= sessionStart && now <= gracePeriodEnd) {
-                            this.currentClassNameDisplay.textContent = `${session.course_name} (${session.day_of_week} ${session.start_time})`;
-                            this.captureAttendanceButton.dataset.sessionId = session.id;
-
-                            const cameraModal = new bootstrap.Modal(this.cameraAttendanceModalElement);
-                            cameraModal.show();
-                            this.startCamera();
-                            activeSessionFound = true;
-                            break; // Open modal for the first active session found and stop
-                        }
+                        const cameraModal = new bootstrap.Modal(this.cameraAttendanceModalElement);
+                        cameraModal.show();
+                        this.startCamera();
+                        activeSessionFound = true;
+                        break;
                     }
                 }
 
                 if (!activeSessionFound) {
-                    // Display the message using showAlert if no active session is found
                     showAlert("No Active Class", "No active class session found for automatic attendance marking. You can proceed with other dashboard functions.", "info");
                 }
             }
+
         }
 
         // --- Profile Edit Logic Class (adapted for Django backend interaction) ---

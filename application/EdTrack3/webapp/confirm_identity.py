@@ -15,7 +15,7 @@ def identifyFace(unknown,known):
     unknwn_enc = face_recognition.face_encodings(unknwn_img)[0]
 
     # Compare the images
-    result = face_recognition.compare_faces([knwn_enc],unknwn_enc)
+    result = face_recognition.compare_faces([knwn_enc], unknwn_enc, tolerance=0.45)
 
     print(result[0])
 
@@ -30,7 +30,7 @@ def identifyFace(unknown,known):
         # Redirect to error page
         #print("You are not who you said you are")
 
-def checkIdentity(user,image_loc):
+def checkIdentity(image_loc, user):
     known = os.listdir("./webapp/known")
 
     for id in known:

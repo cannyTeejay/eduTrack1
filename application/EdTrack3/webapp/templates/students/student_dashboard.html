@@ -821,6 +821,12 @@
                         <i class="fas fa-redo mr-2"></i> Reset Filters
                     </button>
                 </div>
+                
+                <div class="filter-buttons">
+                    <a id="download-attendance-link" href="{% url 'download_attendance' %}" class="btn btn-outline-primary flex items-center">
+                        <i class="fas fa-download mr-2"></i> Download Attendance
+                    </a>
+                </div>
             </div>
 
             <div class="custom-table-responsive">
@@ -863,6 +869,13 @@
                     </tbody>
                 </table>
             </div>
+
+            <div class="filter-buttons">
+                <a href="{% url 'download_timetable' %}" class="btn btn-primary flex items-center">
+                    <i class="fas fa-download mr-2"></i> Download Timetable
+                </a>
+            </div>
+
         </div>
     </div>
 
@@ -1303,27 +1316,24 @@
                 if (hasMarkedAttendance) return;
 
                 const now = new Date();
-                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                const currentDayIndex = now.getDay(); // 0=Sunday, 1=Monday, etc.
-                const dayOrder = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                const currentDay = now.toLocaleString('en-ZA', { weekday: 'long' }); // e.g. "Wednesday"
 
                 let activeSessionFound = false;
 
                 for (const session of allClassSchedule) {
-                    const sessionDayIndex = dayOrder.indexOf(session.day_of_week);
-                    // Calculate the date for this week's occurrence of the session
-                    const diff = sessionDayIndex - currentDayIndex;
-                    const sessionDate = new Date(today);
-                    sessionDate.setDate(today.getDate() + diff);
+                    if (session.day_of_week !== currentDay) continue;
 
-                    // Set session start and end datetime
                     const [startHours, startMinutes] = session.start_time.split(':').map(Number);
                     const [endHours, endMinutes] = session.end_time.split(':').map(Number);
 
-                    const sessionStart = new Date(sessionDate);
+                    const sessionStart = new Date(now);
                     sessionStart.setHours(startHours, startMinutes, 0, 0);
-                    const sessionEnd = new Date(sessionDate);
+
+                    const sessionEnd = new Date(now);
                     sessionEnd.setHours(endHours, endMinutes, 0, 0);
+
+                    console.log(`Now: ${now}`);
+                    console.log(`Session: ${session.course_name}, Start: ${sessionStart}, End: ${sessionEnd}`);
 
                     if (now >= sessionStart && now <= sessionEnd) {
                         this.currentClassNameDisplay.textContent = `${session.course_name} (${session.day_of_week} ${session.start_time})`;

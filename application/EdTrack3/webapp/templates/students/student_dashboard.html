@@ -1014,6 +1014,7 @@
                 this.cameraCanvas = document.getElementById('cameraCanvas');
                 this.captureAttendanceButton = document.getElementById('captureAttendance');
                 this.cameraAttendanceModalElement = document.getElementById('cameraAttendanceModal');
+                this.cameraAttendanceModal = new bootstrap.Modal(this.cameraAttendanceModalElement); // Add this line
                 this.closeCameraModalButton = document.getElementById('closeCameraModal');
                 this.cancelCameraModalButton = document.getElementById('cancelCameraModal');
                 this.currentClassNameDisplay = document.getElementById('current-class-name');
@@ -1263,7 +1264,7 @@
 
                 // --- Send image data to Django backend ---
                 try {
-                    const response = await fetch('/api/mark-attendance/', { //  Django API endpoint
+                    const response = await fetch('/api/mark-attendance/', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -1288,8 +1289,10 @@
                         }
                         this.renderAttendanceRecords(); // Re-render attendance section if active
                         this.renderAttendanceSummary(); // Re-render dashboard summary
-                        const cameraModalInstance = bootstrap.Modal.getInstance(this.cameraAttendanceModalElement);
-                        if (cameraModalInstance) cameraModalInstance.hide();
+                        this.cameraAttendanceModal.hide();
+
+                        // Set hasMarkedAttendance to true so modal doesn't pop up again on refresh
+                        document.getElementById('hasMarkedAttendance').value = 'true';
                     } else {
                         showAlert("Attendance Failed", data.error || "An error occurred while marking attendance.", "danger");
                     }
@@ -1300,9 +1303,7 @@
                     this.captureAttendanceButton.disabled = false; // Re-enable button
                     this.stopCamera(); // Stop camera regardless of success/failure
 
-                    //const cameraModalInstance = 
-
-                    document.querySelector('.modal-backdrop').forEach(el => el.remove());
+                    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
                     document.body.classList.remove('modal-open');
                     document.body.style.overflow = '';
                     document.body.style.paddingRight = '';
@@ -1311,40 +1312,17 @@
 
             checkAndAutoOpenAttendanceModal() {
                 const hasMarkedAttendance = document.getElementById('hasMarkedAttendance').value === 'true';
-                if( hasMarkedAttendance) {
+                if (hasMarkedAttendance) {
                     // If attendance has already been marked, do not auto-open the modal
                     return;
                 }
                 const now = new Date();
-<<<<<<< HEAD
-                const currentDay = now.toLocaleString('en-ZA', { weekday: 'long' }); // e.g. "Wednesday"
-=======
                 const currentDayIndex = now.getDay(); // 0 for Sunday, 1 for Monday, etc.
                 const dayOrder = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
->>>>>>> parent of a7f207b (Updated lecturer_deshboard,student_dashboard,views.py)
 
                 let activeSessionFound = false;
 
                 for (const session of allClassSchedule) {
-<<<<<<< HEAD
-                    if (session.day_of_week !== currentDay) continue;
-
-                    const [startHours, startMinutes] = session.start_time.split(':').map(Number);
-                    const [endHours, endMinutes] = session.end_time.split(':').map(Number);
-
-                    const sessionStart = new Date(now);
-                    sessionStart.setHours(startHours, startMinutes, 0, 0);
-
-                    const sessionEnd = new Date(now);
-                    sessionEnd.setHours(endHours, endMinutes, 0, 0);
-
-                    console.log(`Now: ${now}`);
-                    console.log(`Session: ${session.course_name}, Start: ${sessionStart}, End: ${sessionEnd}`);
-
-                    if (now >= sessionStart && now <= sessionEnd) {
-                        this.currentClassNameDisplay.textContent = `${session.course_name} (${session.day_of_week} ${session.start_time})`;
-                        this.captureAttendanceButton.dataset.sessionId = session.id;
-=======
                     const sessionDayIndex = dayOrder.indexOf(session.day_of_week);
 
                     // Only check if it's the current day of the week
@@ -1357,7 +1335,6 @@
 
                         sessionStart.setHours(startHours, startMinutes, 0, 0);
                         sessionEnd.setHours(endHours, endMinutes, 0, 0);
->>>>>>> parent of a7f207b (Updated lecturer_deshboard,student_dashboard,views.py)
 
                         // Give a grace period of 10 minutes *after* the class starts for automatic popup
                         const gracePeriodEnd = new Date(sessionStart.getTime() + (10 * 60 * 1000)); // 10 minutes after start
@@ -1367,8 +1344,7 @@
                             this.currentClassNameDisplay.textContent = `${session.course_name} (${session.day_of_week} ${session.start_time})`;
                             this.captureAttendanceButton.dataset.sessionId = session.id;
 
-                            const cameraModal = new bootstrap.Modal(this.cameraAttendanceModalElement);
-                            cameraModal.show();
+                            this.cameraAttendanceModal.show(); // Use the instance to show
                             this.startCamera();
                             activeSessionFound = true;
                             break; // Open modal for the first active session found and stop

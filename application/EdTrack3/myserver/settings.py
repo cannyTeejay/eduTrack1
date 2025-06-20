@@ -12,7 +12,6 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
-import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -76,7 +75,14 @@ WSGI_APPLICATION = 'myserver.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'New_Edutrack_DB',
+        'USER': 'postgres',
+        'PASSWORD': 'Canny',
+        'HOST': 'localhost',
+        'PORT': '5432',
+    }
 }
 
 #DATABASES = {

@@ -1,7 +1,7 @@
 import os
+import requests
 import csv
 import base64
-import requests
 from datetime import timedelta, datetime, time
 from django.utils import timezone
 from django.core.files.base import ContentFile
@@ -14,6 +14,7 @@ from django.http import HttpResponse, JsonResponse
 from django.contrib.auth import authenticate, login, logout
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
+from .confirm_identity import checkIdentity
 
 from .models import User, Student, Lecturer, Course, Enrollment, ClassSession, Attendance
 from .forms import (
@@ -94,7 +95,6 @@ def home(request):
 # --- Dashboard Views ---
 
 @login_required
- 
 @user_passes_test(is_student, login_url='/webapp/login/')
 def student_dashboard(request):
     """
@@ -107,13 +107,24 @@ def student_dashboard(request):
     enrolled_courses_qs = Enrollment.objects.filter(student=student_profile).select_related('course__lecturer__user')
 
     subjects_data = []
+    lecturer_info = []  # <-- Add this list
     for enrollment in enrolled_courses_qs:
+        course = enrollment.course
+        lecturer = course.lecturer
         subjects_data.append({
-            'id': enrollment.course.course_code,
-            'course_code': enrollment.course.course_code,
-            'course_name': enrollment.course.course_name,
-            'lecturer_name': enrollment.course.lecturer.user.get_full_name() if enrollment.course.lecturer else 'N/A'
+            'id': course.course_code,
+            'course_code': course.course_code,
+            'course_name': course.course_name,
+            'lecturer_name': lecturer.user.get_full_name() if lecturer else 'N/A'
         })
+        # Build lecturer_info for the dashboard card
+        if lecturer:
+            lecturer_info.append({
+                'course_code': course.course_code,
+                'course_name': course.course_name,
+                'lecturer_name': lecturer.user.get_full_name(),
+                'lecturer_email': lecturer.user.email,
+            })
 
     attendance_records_qs = Attendance.objects.filter(
         student=student_profile
@@ -165,6 +176,7 @@ def student_dashboard(request):
         'subjects': subjects_data,
         'attendance_records': attendance_records_data,
         'class_schedule': class_schedule_data,
+        'lecturer_info': lecturer_info,  # <-- Add this line
     }
 
      
@@ -675,12 +687,12 @@ def mark_attendance_api(request):
 
                 current_time = timezone.now().time()
              
-                if current_time <= session.start_time:
+                if current_time < session.start_time:
                     attendance_status = 'Present'
-                elif current_time > session.start_time and current_time <= session.end_time:
+                elif session.start_time <= current_time <= session.end_time:
                     attendance_status = 'Late'
                 else:
-                    attendance_status = 'Absent'
+                    return JsonResponse({'error': 'Attendance window closed. You cannot mark attendance for this session.'}, status=403)
 
                 attendance_record, created = Attendance.objects.update_or_create(
                     student=student,
@@ -700,7 +712,7 @@ def mark_attendance_api(request):
                     'image_data_url': attendance_record.image_data.url if attendance_record.image_data else None,
                     'session_id': attendance_record.session.id,
                     'session_day': attendance_record.session.get_day_of_week_display(),
-                    'session_start_time': attendance_record.session.strftime('%H:%M'),
+                    'session_start_time': attendance_record.session.start_time.strftime('%H:%M'),
                 }
 
                 return JsonResponse({

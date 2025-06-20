@@ -1,65 +1,27 @@
 import csv
+import base64
+from datetime import timedelta, datetime, time
+
 from django.core.mail import EmailMultiAlternatives  
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
-from django.contrib import messages # For displaying feedback messages
-
- 
- 
+from django.contrib import messages  # For displaying feedback messages
 from django.db.models import Prefetch, Count, Q
 from django.http import HttpResponse, JsonResponse
-import base64
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.contrib.auth import authenticate, login, logout
-from django.contrib import messages
-from datetime import timedelta
-from datetime import datetime, time
-from django.utils import timezone
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required, user_passes_test
 
 from faceRecognition.confirm_identity import checkIdentity
 from .models import User, Student, Lecturer, Course, Enrollment, ClassSession, Attendance
 from .forms import (
     CustomUserCreationForm, StudentForm, LecturerForm, CourseForm,
-    EnrollmentForm, ClassSessionForm, AttendanceForm
-)
- 
-from .forms import AnnouncementForm  
- 
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.db.models import Prefetch, Count, Q
-from django.http import JsonResponse
-import base64
-from django.utils import timezone
-from django.core.files.base import ContentFile
-from django.contrib.auth import authenticate, login, logout
-from django.contrib import messages
-from datetime import timedelta
-from datetime import datetime, time
-from django.utils import timezone
-from .models import User, Student, Lecturer, Course, Enrollment, ClassSession, Attendance
-from .forms import (
-    CustomUserCreationForm, StudentForm, LecturerForm, CourseForm,
-    EnrollmentForm, ClassSessionForm, AttendanceForm
+    EnrollmentForm, ClassSessionForm, AttendanceForm, AnnouncementForm
 )
 
 # --- Helper functions for user type checks ---
-def is_student(user):
-    return user.is_authenticated and hasattr(user, 'student_profile') and user.user_type == 'Student'
-
-def is_lecturer(user):
-    return user.is_authenticated and hasattr(user, 'lecturer_profile') and user.user_type == 'Lecturer'
-
-def is_admin(user):
-    return user.is_authenticated and user.is_staff and user.user_type == 'Admin'
-
-
-# --- Basic Authentication Views ---
- 
-
-
- 
 def is_student(user):
     return user.is_authenticated and hasattr(user, 'student_profile') and user.user_type == 'Student'
 
@@ -765,13 +727,28 @@ def mark_attendance_api(request):
                         'session_start_time': attendance_record.session.start_time.strftime('%H:%M'),
                     }
 
-            return JsonResponse({
-                'message': 'Attendance marked successfully!',
-                'status': attendance_record.status,
-                'course_name': session.course.course_name,
-                'new_record': new_record_data,
-                'created': created
-            })
+                    os.remove(tmp_path)  # Clean up temp file
+
+                    return JsonResponse({
+                        'message': 'Attendance marked successfully!',
+                        'status': attendance_record.status,
+                        'course_name': session.course.course_name,
+                        'new_record': new_record_data,
+                        'created': created
+                    })
+                else:
+                    os.remove(tmp_path)
+                    return JsonResponse({
+                        'error': 'Face verification failed.',
+                        'details': 'The captured image does not match the reference image for the logged-in student.'
+                    }, status=403)
+
+            except Exception as e:
+                os.remove(tmp_path)
+                return JsonResponse({
+                    'error': f'An error occurred during face verification: {str(e)}',
+                    'details': 'Please ensure the captured image is clear and well-lit.'
+                }, status=500)
 
         except ClassSession.DoesNotExist:
             return JsonResponse({'error': 'Class session not found.'}, status=404)

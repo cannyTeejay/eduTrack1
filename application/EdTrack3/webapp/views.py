@@ -5,7 +5,7 @@ from django.utils.html import strip_tags
 from django.contrib import messages # For displaying feedback messages
 import os
 import tempfile
-from .confirm_identity import checkIdentity  # Import the face verification function
+  # Import the face verification function
  
  
 from django.db.models import Prefetch, Count, Q

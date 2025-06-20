@@ -1,20 +1,20 @@
+import os
 import csv
 import base64
+import requests
 from datetime import timedelta, datetime, time
-
+from django.utils import timezone
+from django.core.files.base import ContentFile
 from django.core.mail import EmailMultiAlternatives  
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
-from django.contrib import messages  # For displaying feedback messages
+from django.contrib import messages
 from django.db.models import Prefetch, Count, Q
 from django.http import HttpResponse, JsonResponse
-from django.utils import timezone
-from django.core.files.base import ContentFile
 from django.contrib.auth import authenticate, login, logout
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 
-from faceRecognition.confirm_identity import checkIdentity
 from .models import User, Student, Lecturer, Course, Enrollment, ClassSession, Attendance
 from .forms import (
     CustomUserCreationForm, StudentForm, LecturerForm, CourseForm,
@@ -153,38 +153,6 @@ def student_dashboard(request):
             'lecturer_name': session.lecturer.user.get_full_name() if session.lecturer else 'N/A',
         })
 
-    enrollments = student_profile.enrollments.select_related('course__lecturer__user')
-    lecturer_info = []
-    for enrollment in enrollments:
-        course = enrollment.course
-        lecturer = course.lecturer
-        if lecturer:
-            lecturer_info.append({
-                'course_code': course.course_code,
-                'course_name': course.course_name,
-                'lecturer_name': f"{lecturer.user.first_name} {lecturer.user.last_name}",
-                'lecturer_email': lecturer.user.email,
-            })
-
-    # --- Find current session for auto-attendance ---
-    now = timezone.localtime(timezone.now())
-    today_name = now.strftime('%A')
-    current_time = now.time()
-    current_session_id = None
-    has_marked_attendance = False
-
-    for session in class_schedule_qs:
-        if session.get_day_of_week_display() == today_name:
-            start = session.start_time
-            end = (datetime.combine(now.date(), session.start_time) + timedelta(minutes=10)).time()
-            if start <= current_time <= end:
-                current_session_id = session.id
-                # Check if attendance exists for this session
-                has_marked_attendance = Attendance.objects.filter(
-                    student=student_profile, session=session
-                ).exists()
-                break
-
     context = {
         'student': {
             'firstName': user_data.first_name,
@@ -197,9 +165,6 @@ def student_dashboard(request):
         'subjects': subjects_data,
         'attendance_records': attendance_records_data,
         'class_schedule': class_schedule_data,
-        'lecturer_info': lecturer_info,
-        'has_marked_attendance': has_marked_attendance,
-        'current_session_id': current_session_id,
     }
 
      
@@ -230,40 +195,56 @@ def lecturer_dashboard(request):
 
     # --- Upcoming Session Calculation ---
     upcoming_session = None
-    now = timezone.localtime(timezone.now())
-    today = now.date()
-    current_time = now.time()
-    current_weekday = today.weekday()  # Monday=0
+    now = timezone.localtime(timezone.now())  # Get the current local datetime
+    today_date = now.date()                    # Extract today's date
+    current_day_of_week_int = today_date.weekday()  
+    current_time = now.time()                 # Get the current time
 
+    # Mapping your model's day_of_week strings to Python's weekday() integers
     day_name_to_int = {
         'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3,
         'Friday': 4, 'Saturday': 5, 'Sunday': 6
     }
-
+    
     potential_upcoming_sessions = []
 
     for session in lecturer_sessions_qs:
-        session_weekday = day_name_to_int[session.day_of_week]
-        days_ahead = (session_weekday - current_weekday) % 7
-        session_date = today + timedelta(days=days_ahead)
-        session_datetime = datetime.combine(session_date, session.start_time)
+        session_day_int = day_name_to_int.get(session.day_of_week)
+        
+        if session_day_int is not None:
+            days_diff = session_day_int - current_day_of_week_int
+            
+            # Calculate days_ahead to the next occurrence of this session's day
+            if days_diff < 0:
+                # If the session's day has already passed this week (e.g., it's Thursday, session was Monday),
+                # schedule for next week.
+                days_ahead = days_diff + 7
+            elif days_diff == 0:
+                # If it's today, check if the session time has already passed.
+                if session.start_time <= current_time:
+                    # If time has passed or it's the current session, schedule for next week.
+                    days_ahead = 7
+                else:
+                    # Session is today and still in the future.
+                    days_ahead = 0
+            else:
+                # Session is on a future day this week.
+                days_ahead = days_diff
+            
+            # Calculate the actual concrete date for this upcoming session.
+            concrete_session_date = today_date + timedelta(days=days_ahead)
 
-        # If it's today and the session has already started, schedule for next week
-        if days_ahead == 0 and session.start_time <= current_time:
-            session_date = today + timedelta(days=7)
-            session_datetime = datetime.combine(session_date, session.start_time)
-
-        potential_upcoming_sessions.append({
-            'id': session.pk,
-            'course': {
-                'subjectName': session.course.course_name,
-                'subjectCode': session.course.course_code,
-            },
-            'date': session_date,
-            'time': session.start_time,
-            'location': session.room,
-            'day_of_week': session.day_of_week, # Include for full display if needed
-        })
+            potential_upcoming_sessions.append({
+                'id': session.pk,
+                'course': {
+                    'subjectName': session.course.course_name,
+                    'subjectCode': session.course.course_code,
+                },
+                'date': concrete_session_date,
+                'time': session.start_time,
+                'location': session.room,
+                'day_of_week': session.day_of_week, # Include for full display if needed
+            })
     
     # Sort all potential sessions by concrete date and then by time to find the very next one.
     if potential_upcoming_sessions:
@@ -582,7 +563,6 @@ def add_course(request):
     return render(request, 'add_course.html', context)
 
 @login_required
-
 @user_passes_test(is_admin, login_url='/webapp/login/')
 def enroll_student(request, student_id):
     """
@@ -646,26 +626,12 @@ def update_student_profile_api(request):
     return JsonResponse({'error': 'Invalid request method.'}, status=405)
 
 
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
-from django.utils import timezone
-from django.core.files.base import ContentFile
-import base64
-import tempfile
-import os
-import json
-
-# You must already have these utilities/models
-# from yourapp.models import ClassSession, Attendance
-# from yourapp.utils import checkIdentity, is_student
-
-
 @login_required
 @user_passes_test(is_student)
 def mark_attendance_api(request):
     if request.method == 'POST':
         try:
+            import json
             data = json.loads(request.body)
             session_id = data.get('session_id')
             image_data_b64 = data.get('image_data')
@@ -676,7 +642,6 @@ def mark_attendance_api(request):
             session = get_object_or_404(ClassSession, pk=session_id)
             student = request.user.student_profile
 
-            # Decode base64 image
             if ';base64,' in image_data_b64:
                 format, imgstr = image_data_b64.split(';base64,')
                 ext = format.split('/')[-1]
@@ -685,80 +650,78 @@ def mark_attendance_api(request):
                 ext = 'png'
             image_data = base64.b64decode(imgstr)
 
-            # Prepare image file for saving later (only if identity is confirmed)
-            file_name = f"attendance_{student.user.username}_{session.id}_{timezone.now().strftime('%Y%m%d%H%M%S')}.{ext}"
-            content_file = ContentFile(image_data, name=file_name)
+            # API URL
+            API_URL = "http://ec2-3-91-152-158.compute-1.amazonaws.com"
 
-            # Save the image temporarily for face recognition check
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}') as tmp:
-                tmp.write(image_data)
-                tmp_path = tmp.name
+            # Create request packet
+            stdNumb = student.user.username # getting student number
+            files = {
+                "file": image_data
+            }
+            data = {
+                "identifier": stdNumb
+            }
 
-            try:
-                # ✅ Only proceed if the face matches the logged-in user
-                if checkIdentity(tmp_path, student.user.username):
-                    current_time = timezone.now().time()
+            # Send the POST request
+            response = requests.post(API_URL, files=files, data=data)
 
-                    if current_time <= session.start_time:
-                        attendance_status = 'Present'
-                    elif current_time <= session.end_time:
-                        attendance_status = 'Late'
-                    else:
-                        attendance_status = 'Absent'
+            # Create image
+            file_name = f"{stdNumb}_unknown.png"
 
-                    attendance_record, created = Attendance.objects.update_or_create(
-                        student=student,
-                        session=session,
-                        defaults={
-                            'status': attendance_status,
-                            'image_data': content_file,
-                            'date_time': timezone.now()
-                        }
-                    )
+            # Only happens if identity is confirmed
+            if response.ok:
+                content_file = ContentFile(image_data, name=file_name)
+                #os.remove(file_path)
 
-                    new_record_data = {
-                        'course_name': attendance_record.session.course.course_name,
-                        'course_code': attendance_record.session.course.course_code,
-                        'date_time': attendance_record.date_time.isoformat(),
-                        'status': attendance_record.status,
-                        'image_data_url': attendance_record.image_data.url if attendance_record.image_data else None,
-                        'session_id': attendance_record.session.id,
-                        'session_day': attendance_record.session.get_day_of_week_display(),
-                        'session_start_time': attendance_record.session.start_time.strftime('%H:%M'),
-                    }
-
-                    os.remove(tmp_path)  # Clean up temp file
-
-                    return JsonResponse({
-                        'message': 'Attendance marked successfully!',
-                        'status': attendance_record.status,
-                        'course_name': session.course.course_name,
-                        'new_record': new_record_data,
-                        'created': created
-                    })
+                current_time = timezone.now().time()
+             
+                if current_time <= session.start_time:
+                    attendance_status = 'Present'
+                elif current_time > session.start_time and current_time <= session.end_time:
+                    attendance_status = 'Late'
                 else:
-                    os.remove(tmp_path)
-                    return JsonResponse({
-                        'error': 'Face verification failed.',
-                        'details': 'The captured image does not match the reference image for the logged-in student.'
-                    }, status=403)
+                    attendance_status = 'Absent'
 
-            except Exception as e:
-                os.remove(tmp_path)
+                attendance_record, created = Attendance.objects.update_or_create(
+                    student=student,
+                    session=session,
+                    defaults={
+                        'status': attendance_status,
+                        'image_data': content_file,
+                        'date_time': timezone.now()
+                    }
+                )
+
+                new_record_data = {
+                    'course_name': attendance_record.session.course.course_name,
+                    'course_code': attendance_record.session.course.course_code,
+                    'date_time': attendance_record.date_time.isoformat(),
+                    'status': attendance_record.status,
+                    'image_data_url': attendance_record.image_data.url if attendance_record.image_data else None,
+                    'session_id': attendance_record.session.id,
+                    'session_day': attendance_record.session.get_day_of_week_display(),
+                    'session_start_time': attendance_record.session.strftime('%H:%M'),
+                }
+
                 return JsonResponse({
-                    'error': f'An error occurred during face verification: {str(e)}',
-                    'details': 'Please ensure the captured image is clear and well-lit.'
-                }, status=500)
+                    'message': 'Attendance marked successfully!',
+                    'status': attendance_record.status,
+                    'course_name': session.course.course_name,
+                    'new_record': new_record_data,
+                    'created': created
+                })
+            else:
+                return JsonResponse({'error': "Submited face doesn't match identity on record"}, status=404)
 
         except ClassSession.DoesNotExist:
             return JsonResponse({'error': 'Class session not found.'}, status=404)
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return JsonResponse({
-                'error': f'An error occurred: {str(e)}',
-                'details': 'Please contact support for assistance.'
-            }, status=500)
+            return JsonResponse({'error': f'An error occurred: {str(e)}'}, status=500)
+    return JsonResponse({'error': 'Invalid request method.'}, status=405)
+
+
  
 @login_required
 def add_class_session(request):
@@ -784,7 +747,6 @@ def add_class_session(request):
             messages.success(request, "Class session scheduled successfully!")
             return redirect('lecturer_dashboard') # Redirect to the lecturer's dashboard after success
         else:
-            print(form.errors)  # <-- Add this line
             messages.error(request, "Please correct the errors below.")
     else:
         # For GET request, instantiate an empty form and pass the lecturer_profile
@@ -818,14 +780,14 @@ def edit_class_session(request, pk):
             messages.success(request, "Class session updated successfully!")
             return redirect('lecturer_dashboard') # Redirect to dashboard after success
         else:
-            print(form.errors)  # <-- Add this line
             messages.error(request, "Please correct the errors below.")
     else:
         # For GET request, instantiate the form with the existing instance data and pass the lecturer_profile
         form = ClassSessionForm(instance=class_session, lecturer_profile=lecturer_profile)
 
     # 
-    return render(request, 'lecturers/class_session_form.html', {'form': form, 'class_session': class_session})
+    return render(request, 'academics/class_session_form.html', {'form': form, 'class_session': class_session})
+
 
 @login_required
 @user_passes_test(is_student)
@@ -881,6 +843,26 @@ def download_timetable(request):
     return response
 
 @login_required
+@user_passes_test(is_lecturer, login_url='/webapp/login/')
+def delete_class_session(request, pk):
+    """
+    Deletes a class session. Only accessible by the lecturer who owns the session.
+    """
+    if not hasattr(request.user, 'lecturer_profile'):
+        messages.error(request, "You must be a lecturer to delete class schedules.")
+        return redirect('lecturer_dashboard')
+
+    lecturer_profile = request.user.lecturer_profile
+    class_session = get_object_or_404(ClassSession, pk=pk, lecturer=lecturer_profile)
+
+    if request.method == 'POST':
+        class_session.delete()
+        messages.success(request, "Class session deleted successfully!")
+        return redirect('lecturer_dashboard')
+
+    return render(request, 'lecturers/confirm_delete_class_session.html', {'class_session': class_session})
+
+@login_required
 def contact_lecturers(request):
     student = request.user.student_profile  # Get the Student profile for the logged-in user
     # Get all enrollments for this student
@@ -904,24 +886,3 @@ def custom_404_view(request,exception):
 
 def custom_403_view(request,exception):
     return render(request, '403.html', status=403)
-
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import get_object_or_404, redirect, render
-from django.contrib import messages
-
-@login_required
-def delete_class_session(request, pk):
-    # Ensure the logged-in user is a lecturer
-    if not hasattr(request.user, 'lecturer_profile'):
-        messages.error(request, "You must be a lecturer to delete class schedules.")
-        return redirect('lecturer_dashboard')
-
-    lecturer_profile = request.user.lecturer_profile
-    class_session = get_object_or_404(ClassSession, pk=pk, lecturer=lecturer_profile)
-
-    if request.method == 'POST':
-        class_session.delete()
-        messages.success(request, "Class session deleted successfully!")
-        return redirect('lecturer_dashboard')
-
-    return render(request, 'lecturers/class_session_confirm_delete.html', {'class_session': class_session})

@@ -3,9 +3,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.contrib import messages # For displaying feedback messages
-import os
-import tempfile
-  # Import the face verification function
+
  
  
 from django.db.models import Prefetch, Count, Q
@@ -18,6 +16,8 @@ from django.contrib import messages
 from datetime import timedelta
 from datetime import datetime, time
 from django.utils import timezone
+
+from faceRecognition.confirm_identity import checkIdentity
 from .models import User, Student, Lecturer, Course, Enrollment, ClassSession, Attendance
 from .forms import (
     CustomUserCreationForm, StudentForm, LecturerForm, CourseForm,
@@ -765,29 +765,13 @@ def mark_attendance_api(request):
                         'session_start_time': attendance_record.session.start_time.strftime('%H:%M'),
                     }
 
-                    os.remove(tmp_path)  # 🧼 Clean up temp file
-
-                    return JsonResponse({
-                        'message': 'Attendance marked successfully!',
-                        'status': attendance_record.status,
-                        'course_name': session.course.course_name,
-                        'new_record': new_record_data,
-                        'created': created
-                    })
-
-                else:
-                    os.remove(tmp_path)  # 🧼 Clean up temp file
-                    return JsonResponse({
-                        'error': 'Face verification failed.',
-                        'details': 'The captured image does not match the reference image for the logged-in student.'
-                    }, status=403)
-
-            except Exception as e:
-                os.remove(tmp_path)
-                return JsonResponse({
-                    'error': f'An error occurred during face verification: {str(e)}',
-                    'details': 'Please ensure the captured image is clear and well-lit.'
-                }, status=500)
+            return JsonResponse({
+                'message': 'Attendance marked successfully!',
+                'status': attendance_record.status,
+                'course_name': session.course.course_name,
+                'new_record': new_record_data,
+                'created': created
+            })
 
         except ClassSession.DoesNotExist:
             return JsonResponse({'error': 'Class session not found.'}, status=404)

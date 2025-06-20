@@ -1288,7 +1288,8 @@
                         }
                         this.renderAttendanceRecords(); // Re-render attendance section if active
                         this.renderAttendanceSummary(); // Re-render dashboard summary
-                        
+                        const cameraModalInstance = bootstrap.Modal.getInstance(this.cameraAttendanceModalElement);
+                        if (cameraModalInstance) cameraModalInstance.hide();
                     } else {
                         showAlert("Attendance Failed", data.error || "An error occurred while marking attendance.", "danger");
                     }
@@ -1299,28 +1300,33 @@
                     this.captureAttendanceButton.disabled = false; // Re-enable button
                     this.stopCamera(); // Stop camera regardless of success/failure
 
-                    const cameraModalInstance = bootstrap.Modal.getInstance(this.cameraAttendanceModalElement);
-                    if (cameraModalInstance) cameraModalInstance.hide();
+                    //const cameraModalInstance = 
 
                     document.querySelector('.modal-backdrop').forEach(el => el.remove());
-                    setTimeout(() => {
-                        document.body.classList.remove('modal-open');
-                        document.body.style.overflow = '';
-                        document.body.style.paddingRight = '';
-                    }, 50); // Allow time for modal to close
+                    document.body.classList.remove('modal-open');
+                    document.body.style.overflow = '';
+                    document.body.style.paddingRight = '';
                 }
             }
 
             checkAndAutoOpenAttendanceModal() {
                 const hasMarkedAttendance = document.getElementById('hasMarkedAttendance').value === 'true';
-                if (hasMarkedAttendance) return;
-
+                if( hasMarkedAttendance) {
+                    // If attendance has already been marked, do not auto-open the modal
+                    return;
+                }
                 const now = new Date();
+<<<<<<< HEAD
                 const currentDay = now.toLocaleString('en-ZA', { weekday: 'long' }); // e.g. "Wednesday"
+=======
+                const currentDayIndex = now.getDay(); // 0 for Sunday, 1 for Monday, etc.
+                const dayOrder = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+>>>>>>> parent of a7f207b (Updated lecturer_deshboard,student_dashboard,views.py)
 
                 let activeSessionFound = false;
 
                 for (const session of allClassSchedule) {
+<<<<<<< HEAD
                     if (session.day_of_week !== currentDay) continue;
 
                     const [startHours, startMinutes] = session.start_time.split(':').map(Number);
@@ -1338,20 +1344,43 @@
                     if (now >= sessionStart && now <= sessionEnd) {
                         this.currentClassNameDisplay.textContent = `${session.course_name} (${session.day_of_week} ${session.start_time})`;
                         this.captureAttendanceButton.dataset.sessionId = session.id;
+=======
+                    const sessionDayIndex = dayOrder.indexOf(session.day_of_week);
 
-                        const cameraModal = new bootstrap.Modal(this.cameraAttendanceModalElement);
-                        cameraModal.show();
-                        this.startCamera();
-                        activeSessionFound = true;
-                        break;
+                    // Only check if it's the current day of the week
+                    if (sessionDayIndex === currentDayIndex) {
+                        const sessionStart = new Date();
+                        const sessionEnd = new Date();
+
+                        const [startHours, startMinutes] = session.start_time.split(':').map(Number);
+                        const [endHours, endMinutes] = session.end_time.split(':').map(Number);
+
+                        sessionStart.setHours(startHours, startMinutes, 0, 0);
+                        sessionEnd.setHours(endHours, endMinutes, 0, 0);
+>>>>>>> parent of a7f207b (Updated lecturer_deshboard,student_dashboard,views.py)
+
+                        // Give a grace period of 10 minutes *after* the class starts for automatic popup
+                        const gracePeriodEnd = new Date(sessionStart.getTime() + (10 * 60 * 1000)); // 10 minutes after start
+
+                        // Check if current time is within the session start and grace period
+                        if (now >= sessionStart && now <= gracePeriodEnd) {
+                            this.currentClassNameDisplay.textContent = `${session.course_name} (${session.day_of_week} ${session.start_time})`;
+                            this.captureAttendanceButton.dataset.sessionId = session.id;
+
+                            const cameraModal = new bootstrap.Modal(this.cameraAttendanceModalElement);
+                            cameraModal.show();
+                            this.startCamera();
+                            activeSessionFound = true;
+                            break; // Open modal for the first active session found and stop
+                        }
                     }
                 }
 
                 if (!activeSessionFound) {
+                    // Display the message using showAlert if no active session is found
                     showAlert("No Active Class", "No active class session found for automatic attendance marking. You can proceed with other dashboard functions.", "info");
                 }
             }
-
         }
 
         // --- Profile Edit Logic Class (adapted for Django backend interaction) ---
